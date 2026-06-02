@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Swimming-pool detection assignment — Python dependencies
+# Target env: conda env `computer_vision` (Python 3.11+)
+#
+#   conda activate computer_vision
+#   pip install -r requirements.txt
+#
+# ---------------------------------------------------------------------------
+# PyTorch — install SEPARATELY, before this file, with the right CUDA build.
+#
+#   RTX 5060 Ti (Blackwell, sm_120) needs CUDA 12.8+ wheels:
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#
+#   Intel Mac (CPU-only, dev/smoke-tests): no wheels exist past torch 2.2.2, and
+#   they require Python <=3.11. Use the pinned legacy build + numpy<2 (torch
+#   2.2.2 is built against numpy 1.x and crashes on numpy 2):
+#     pip install "torch==2.2.2" "torchvision==0.17.2" "numpy<2"
+#
+# torch/torchvision are intentionally NOT pinned here so each machine can pull
+# the correct CPU/CUDA build from the matching index. Everything below is
+# index-agnostic and safe to install with a plain `pip install -r`.
+# ---------------------------------------------------------------------------
+
+# --- Core detection / training -------------------------------------------
+ultralytics>=8.4.0          # YOLO26 (n/s/m/l/x) + YOLO11-OBB / YOLO26-OBB
+rfdetr>=1.4.0               # RF-DETR Nano / Small (Step 3 benchmark)
+faster-coco-eval>=1.5.0     # COCO mAP backend used by RF-DETR training
+torchmetrics>=1.2.0         # metrics during RF-DETR training
+pytorch-lightning>=2.2.1    # RF-DETR training loop dependency
+
+# --- Annotation pipeline (Step 1) ----------------------------------------
+autodistill>=0.1.29         # GroundingDINO wrapper for auto-annotation
+autodistill-grounding-dino>=0.1.4
+roboflow>=1.1.48            # annotation assist / dataset upload (NOT for training)
+
+# --- Vision / IO utilities -----------------------------------------------
+supervision>=0.26.0         # detections, annotators, dataset loaders, metrics
+opencv-python>=4.10.0       # image read/write, drawing
+pillow>=10.4.0              # image IO
+numpy>=1.26,<3.0            # arrays (ultralytics is not yet fully numpy>=2 clean everywhere)
+pyyaml>=6.0                 # data.yaml read/write
+
+# --- Analysis / reporting -------------------------------------------------
+pandas>=2.2.0               # metrics tables across model scales
+matplotlib>=3.8.0           # plots, failure-case figures
+seaborn>=0.13.0             # nicer comparison charts
+tqdm>=4.66.0               # progress bars
+
+# --- Optional annotation reviewing ---------------------------------------
+# fiftyone>=1.0.0           # Voxel51 visual review (uncomment if used)

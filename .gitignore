@@ -1,0 +1,40 @@
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+env/
+
+# --- Generated / regenerable artifacts ---
+# Prepared datasets: rebuilt deterministically by the prepare_dataset.py scripts
+# (same seed → same split on any machine), so they don't need to live in git.
+data/dataset/          # YOLO format (02_yolo26_models)
+data/dataset_coco/     # COCO format (03_rf_detr_models)
+
+# Per-run training output folders (plots, logs, metrics, intermediate ckpts).
+**/outputs/
+**/runs/
+
+# --- Model checkpoints ---
+# Fat checkpoints (esp. last.pt + optimizer state) must NOT go in plain git.
+# A run folder's progress.json + results_summary.csv are tiny; to version a
+# completed best.pt, add it explicitly (`git add -f path/to/best.pt`) or use LFS.
+*.pt
+*.pth
+
+# Pretrained-weight cache (train_yolo26.py downloads here, not the repo root).
+02_yolo26_models/.pretrained/
+# Belt-and-suspenders: any stray Ultralytics weight that still lands in cwd.
+yolo*.pt
+
+# --- Large data (keep source images out unless you intend to version them) ---
+# data/images/
+
+# --- Agents ---
+.claude
+AGENTS.md

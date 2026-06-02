@@ -1,0 +1,12 @@
+names:
+- pool
+nc: 1
+roboflow:
+  license: CC BY 4.0
+  project: computer-vision-individual-c2kt4
+  url: https://universe.roboflow.com/ignacios-workspace-ntvi0/computer-vision-individual-c2kt4/dataset/1
+  version: 1
+  workspace: ignacios-workspace-ntvi0
+test: ../test/images
+train: ../train/images
+val: ../valid/images
