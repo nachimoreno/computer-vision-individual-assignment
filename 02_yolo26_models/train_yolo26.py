@@ -40,9 +40,14 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+# Must be set before torch is imported so MPS falls back to CPU for any op
+# that produces NaN/Inf on Apple Silicon (affects larger YOLO26 variants).
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import torch
 from ultralytics import YOLO
@@ -59,11 +64,14 @@ PRETRAINED_DIR = HERE / ".pretrained"
 # Identical hyperparameters across all scales for a fair comparison. Every value
 # the assignment requires us to report is set explicitly here (not left to
 # Ultralytics "auto") so the report can quote them directly.
+# Exception: `batch` varies per scale (see BATCH_BY_SCALE) because the larger
+# variants don't fit Apple-Silicon unified memory at batch 16. Ultralytics
+# normalises weight decay + LR to a nominal batch size (nbs=64) via gradient
+# accumulation, so the effective optimization stays comparable across scales.
 HYPERPARAMS = dict(
     epochs=100,
     patience=20,        # early stop if val mAP plateaus for 20 epochs
     imgsz=640,          # upscales the ~350 px tiles — helps small-pool recall
-    batch=16,
     optimizer="AdamW",
     lr0=0.001,
     lrf=0.01,           # final LR = lr0 * lrf
@@ -81,7 +89,12 @@ HYPERPARAMS = dict(
     val=True,
 )
 
-MODEL_FILES = {"n": "yolo26n.pt", "s": "yolo26s.pt", "m": "yolo26m.pt"}
+MODEL_FILES = {"n": "yolo26n.pt", "s": "yolo26s.pt", "m": "yolo26m.pt", "l": "yolo26l.pt", "x": "yolo26x.pt"}
+
+# Per-scale batch size: the larger variants overflow Apple-Silicon unified memory
+# at batch 16, so l/x train smaller. A CLI --batch still overrides everything.
+# nbs=64 gradient accumulation keeps the effective optimization comparable.
+BATCH_BY_SCALE = {"n": 16, "s": 16, "m": 16, "l": 8, "x": 8}
 
 
 @dataclass
@@ -136,7 +149,11 @@ def pretrained_path(weights: str) -> str:
 
 
 def device_str() -> str:
-    return "0" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        return "0"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 def param_count(model: YOLO) -> int:
@@ -179,14 +196,32 @@ def train_one(ctx: RunContext, tag: str, weights: str, entry: dict, device: str,
     else:
         print(f"\n>>> TRAINING {run_name} fresh ({weights})")
         model = YOLO(pretrained_path(weights))
-        model.train(
+        # MPS (Apple Silicon) AMP produces NaN/Inf in the EMA → disable it.
+        mps_overrides = {"amp": False} if device == "mps" else {}
+        # Per-scale batch; a CLI --batch (in overrides) still wins.
+        scale_batch = {"batch": BATCH_BY_SCALE[tag]}
+        train_kwargs = dict(
             data=str(DATA_YAML),
             project=str(ctx.root),
             name=run_name,
             exist_ok=True,
             device=device,
-            **{**HYPERPARAMS, **overrides},
+            **{**HYPERPARAMS, **scale_batch, **mps_overrides, **overrides},
         )
+        try:
+            model.train(**train_kwargs)
+        except FileNotFoundError:
+            if device == "mps":
+                # MPS silently fails to serialise checkpoints for larger models;
+                # wipe the broken run dir and retry on CPU.
+                import shutil
+                print(f"\n    MPS checkpoint save failed for {run_name} — retrying on CPU.")
+                if run_dir.exists():
+                    shutil.rmtree(run_dir)
+                model = YOLO(pretrained_path(weights))
+                model.train(**{**train_kwargs, "device": "cpu"})
+            else:
+                raise
 
     # Always evaluate the best checkpoint on val and the held-out test split.
     # Route Ultralytics' eval output into THIS run folder (otherwise it defaults
@@ -282,6 +317,8 @@ def main() -> None:
     print(f"Device: {device}  (torch {torch.__version__}, cuda={torch.cuda.is_available()})")
     if device == "cpu":
         print("WARNING: training on CPU — fine for an n-only smoke test, slow for the full sweep.")
+    elif device == "mps":
+        print("INFO: training on Apple MPS (Metal) — 3-6× faster than CPU on Apple Silicon.")
 
     ctx = resolve_context(args.resume)
     progress = ctx.load_progress()
