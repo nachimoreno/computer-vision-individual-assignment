@@ -1,4 +1,5 @@
-"""Train an RF-DETR sweep (Nano / Small) with resume-aware orchestration.
+"""Train the full RF-DETR sweep (Nano / Small / Medium / Base / Large) with
+resume-aware orchestration.
 
 Mirrors 02_yolo26_models/train_yolo26.py so the two architectures share the same
 workflow: unique per-run output folders, two-level checkpointing, and a metrics
@@ -24,8 +25,8 @@ Checkpointing (two levels)
   the rest started fresh. See AGENTS.md for the cross-machine note.
 
 Usage:
-  python train_rfdetr.py                       # fresh nano+small sweep -> new folder
-  python train_rfdetr.py --models nano
+  python train_rfdetr.py                       # fresh sweep of ALL five -> new folder
+  python train_rfdetr.py --models nano small   # subset of the sweep
   python train_rfdetr.py --epochs 30 --batch 4 --grad-accum 4
   python train_rfdetr.py --resume latest       # continue most recent run folder
 """
@@ -48,11 +49,25 @@ OUTPUTS_DIR = HERE / "outputs"
 
 # Lazily imported so dataset prep / --help work without rfdetr installed.
 def _model_classes() -> dict:
-    from rfdetr import RFDETRNano, RFDETRSmall
-    return {"nano": RFDETRNano, "small": RFDETRSmall}
+    from rfdetr import (
+        RFDETRNano,
+        RFDETRSmall,
+        RFDETRMedium,
+        RFDETRBase,
+        RFDETRLarge,
+    )
+    return {
+        "nano": RFDETRNano,
+        "small": RFDETRSmall,
+        "medium": RFDETRMedium,
+        "base": RFDETRBase,
+        "large": RFDETRLarge,
+    }
 
 
-MODEL_TAGS = ("nano", "small")
+# Ordered smallest -> largest so an interrupted sweep gets the cheap models done
+# first and the heavy ones (base/large) come last.
+MODEL_TAGS = ("nano", "small", "medium", "base", "large")
 
 # Identical hyperparameters across both scales for a fair comparison. RF-DETR
 # uses AdamW internally; the reportable knobs are set explicitly here.
@@ -151,7 +166,9 @@ def evaluate(model, split_folder: str) -> dict:
 
     targets, predictions = [], []
     for path, _image, annotations in ds:
-        det = model.predict(Image.open(path), threshold=0.0)
+        # Force RGB: some source PNGs carry an alpha channel (RGBA), but
+        # RF-DETR's predict() only accepts 3-channel input.
+        det = model.predict(Image.open(path).convert("RGB"), threshold=0.0)
         targets.append(annotations)
         predictions.append(det)
 
